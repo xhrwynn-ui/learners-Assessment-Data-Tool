@@ -121,6 +121,7 @@ if(!S.bow)S.bow=JSON.parse(JSON.stringify(TERMS));
 if(!S.corr)S.corr={};
 if(!S.bw)S.bw=BLOOM.map(b=>b[2]);
 if(!S.inum)S.inum={};
+if(!S.xlsX)S.xlsX={};
 const save=()=>{try{localStorage.setItem("esp10",JSON.stringify(S))}catch(e){}};
 const esc=s=>String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
 const f1=x=>(Math.round(x*10)/10).toFixed(1);
@@ -134,6 +135,11 @@ function resetBW(){S.bw=BLOOM.map(b=>b[2]);draw()}
 function bwGrp(g){return BLOOM.reduce((a,x,i)=>a+(x[1]===g?(+S.bw[i]||0):0),0)}
 function bloomSplit(total){const W=S.bw.map(x=>Math.max(0,+x||0)),ws=W.reduce((a,b)=>a+b,0)||1;const raw=W.map(w=>w/ws*total);const fl=raw.map(Math.floor);let left=total-fl.reduce((a,b)=>a+b,0);
 raw.map((r,i)=>[r-fl[i],i]).sort((a,b)=>b[0]-a[0]).slice(0,left).forEach(([,i])=>fl[i]++);return fl}
+function missingNums(){const used=new Set();topics().forEach((r,i)=>parseNums(numsOf(i)).forEach(k=>used.add(k)));const m=[];for(let k=1;k<=S.n;k++)if(!used.has(k))m.push(k);return m}
+function compressNums(a){const o=[];for(let i=0;i<a.length;){let j=i;while(j+1<a.length&&a[j+1]===a[j]+1)j++;o.push(j>i?a[i]+"\u2013"+a[j]:String(a[i]));i=j+1}return o.join(", ")}
+function fillMissing(auto,skip){const a=alloc(S.n);let ms=missingNums();const notes={};
+if(ms.length)topics().forEach((r,i)=>{if(auto===true&&i===skip)return;const have=new Set(parseNums(numsOf(i))).size,need=a[i]-have;if(need>0&&ms.length){const take=ms.splice(0,need);if(!S.inum[S.term])S.inum[S.term]={};const cur=numsOf(i).trim();S.inum[S.term][i]=(cur?cur+", ":"")+compressNums(take);notes[i]="Added missing item"+(take.length>1?"s ":" ")+compressNums(take)}});
+S.tosNote=notes;draw()}
 function numCheck(){const sh=a=>a.length>8?a.slice(0,8).join(", ")+" … +"+(a.length-8)+" more":a.join(", "),n=S.n,use={},tp=topics(),err=tp.map(()=>[]);
 tp.forEach((r,i)=>{const bad=[],over=[];String(numsOf(i)).split(/[,;\s]+/).filter(Boolean).forEach(q=>{let a,b;const m=q.match(/^(\d+)[-\u2013](\d+)$/);if(m){a=+m[1];b=+m[2]}else if(/^\d+$/.test(q)){a=b=+q}else{bad.push(q);return}
 if(a>b){bad.push(q);return}
@@ -147,8 +153,8 @@ return{err,count:err.reduce((a,e)=>a+e.length,0)}}
 function defNums(i){const a=alloc(S.n);let s=0;for(let k=0;k<i;k++)s+=a[k];const c=a[i];return c?(c>1?(s+1)+"\u2013"+(s+c):String(s+1)):""}
 function numsOf(i){const o=(S.inum[S.term]||{})[i];return o!==undefined?o:defNums(i)}
 function parseNums(t){const out=[];String(t).split(/[,;\s]+/).forEach(q=>{const m=q.match(/^(\d+)[-\u2013](\d+)$/);if(m){for(let k=+m[1];k<=+m[2]&&k<=S.n;k++)out.push(k)}else if(/^\d+$/.test(q))out.push(+q)});return out.filter(k=>k>=1&&k<=S.n)}
-function setNums(i,v){if(!S.inum[S.term])S.inum[S.term]={};const t=v.trim();if(t===""||t===defNums(i))delete S.inum[S.term][i];else S.inum[S.term][i]=t;draw()}
-function resetNums(){S.inum[S.term]={};draw()}
+function setNums(i,v){if(!S.inum[S.term])S.inum[S.term]={};const t=v.trim();if(t===""||t===defNums(i))delete S.inum[S.term][i];else S.inum[S.term][i]=t;fillMissing(true,i)}
+function resetNums(){S.inum[S.term]={};S.tosNote={};draw()}
 function itemTopic(){const a=alloc(S.n),def=[];a.forEach((c,i)=>{for(let k=0;k<c;k++)def.push(i)});const ov=S.inum[S.term]||{};if(!Object.keys(ov).length)return def;
 const m=Array(S.n).fill(-1);Object.keys(ov).forEach(i=>parseNums(ov[i]).forEach(k=>{m[k-1]=+i}));
 def.forEach((t,k)=>{if(m[k]===-1&&ov[t]===undefined)m[k]=t});return m}
@@ -182,11 +188,11 @@ function addTopic(){S.bow[S.term].push(["","",0,""]);draw()}
 function delTopic(i){S.bow[S.term].splice(i,1);S.correct={};S.corr={};S.inum={};draw()}
 function resetBow(){S.bow[S.term]=JSON.parse(JSON.stringify(TERMS[S.term]));S.correct={};S.corr={};S.inum={};draw()}
 
-function tos(){const a=alloc(S.n),b=bloomSplit(S.n);let c=0;const nc=numCheck(),ce=nc.err;
-return `<h2>Table of Specifications</h2>${termBar()}<div class="wrap"><table><thead><tr><th>Topic</th><th>Days</th><th>Share</th><th>Items</th><th>Item numbers</th></tr></thead><tbody>
-${topics().map((r,i)=>{const nm=numsOf(i),cnt=parseNums(nm).length;return `<tr><td>${r[0]}</td><td>${days()[i]}</td><td>${f1(days()[i]/totDays()*100)}%</td><td>${a[i]}</td><td><input value="${esc(nm)}" aria-label="Item numbers for ${esc(r[0])}" placeholder="e.g. 1-8, 12" style="width:150px${ce[i].length?";border-color:var(--bad)":""}" aria-invalid="${ce[i].length>0}" onchange="setNums(${i},this.value)">${cnt!==a[i]?`<br><small>${cnt} listed</small>`:""}${ce[i].map(e=>`<br><small style="color:var(--bad)" role="alert">${esc(e)}</small>`).join("")}</td></tr>`}).join("")}
-</tbody><tfoot><tr><td>Total</td><td>${totDays()}</td><td>100%</td><td>${a.reduce((x,y)=>x+y,0)}</td><td>${new Set(topics().flatMap((r,i)=>parseNums(numsOf(i)))).size} of ${S.n} numbered</td></tr></tfoot></table></div>
-${nc.count?`<p role="alert" style="color:var(--bad);font-weight:600;margin:8px 0">Item numbers need attention: ${nc.count} problem${nc.count===1?"":"s"} marked in red above. Numbers must be between 1 and ${S.n} and used only once.</p>`:""}
+function tos(){const a=alloc(S.n),b=bloomSplit(S.n);let c=0;const nc=numCheck(),ce=nc.err,miss=missingNums();
+return `<h2>Table of Specifications</h2>${termBar()}<div class="wrap"><table><thead>${miss.length?`<tr><td colspan="5" role="alert" style="color:var(--bad);font-weight:600;background:rgba(166,61,47,.08)">Missing item number${miss.length===1?"":"s"}: ${compressNums(miss)}</td></tr>`:""}<tr><th>Topic</th><th>Days</th><th>Share</th><th>Items</th><th>Item numbers</th></tr></thead><tbody>
+${topics().map((r,i)=>{const nm=numsOf(i),cnt=parseNums(nm).length;return `<tr${cnt!==a[i]?' style="background:rgba(166,61,47,.08)"':""}><td>${r[0]}</td><td>${days()[i]}</td><td>${f1(days()[i]/totDays()*100)}%</td><td>${a[i]}</td><td><input value="${esc(nm)}" aria-label="Item numbers for ${esc(r[0])}" placeholder="e.g. 1-8, 12" style="width:150px${ce[i].length?";border-color:var(--bad)":""}" aria-invalid="${ce[i].length>0}" onchange="setNums(${i},this.value)">${cnt<a[i]?`<br><small style="color:var(--bad)">${cnt} listed, needs ${a[i]-cnt} more</small>`:cnt>a[i]?`<br><small style="color:var(--bad)">${cnt} listed, ${cnt-a[i]} extra</small>`:""}${(S.tosNote||{})[i]?`<br><small style="color:var(--ok)">${esc(S.tosNote[i])}</small>`:""}${ce[i].map(e=>`<br><small style="color:var(--bad)" role="alert">${esc(e)}</small>`).join("")}</td></tr>`}).join("")}
+</tbody><tfoot><tr><td>Total</td><td>${totDays()}</td><td>100%</td><td>${a.reduce((x,y)=>x+y,0)}</td><td>${new Set(topics().flatMap((r,i)=>parseNums(numsOf(i)))).size} of ${S.n} numbered${miss.length?`<br><small style="color:var(--bad)">Missing: ${compressNums(miss)}</small>`:""}</td></tr></tfoot></table></div>
+${miss.length?`<p role="alert" style="color:var(--bad);font-weight:600;margin:8px 0">Missing item number${miss.length===1?"":"s"}: ${compressNums(miss)} (${miss.length} of ${S.n} items are not assigned to any topic). Type them in a topic's Item numbers box, or <button class="b" onclick="fillMissing()">Add missing numbers</button> to give them to the topics that are short.</p>`:""}${nc.count?`<p role="alert" style="color:var(--bad);font-weight:600;margin:8px 0">Item numbers need attention: ${nc.count} problem${nc.count===1?"":"s"} marked in red above. Numbers must be between 1 and ${S.n} and used only once.</p>`:""}
 <p class="note">Type item numbers like 1-8 or 3, 5, 9-12 for each topic. They decide which topic each item belongs to on the other tabs. Leave a box empty to use the automatic numbers. <button class="b" onclick="resetNums()">Reset item numbers</button></p>
 <h3 style="margin-top:18px">Cognitive distribution (${bwGrp("Easy")}% Easy · ${bwGrp("Average")}% Average · ${bwGrp("Difficult")}% Difficult)</h3><div class="wrap"><table><thead><tr><th>Level</th><th>Difficulty</th><th>Weight</th><th>Items (${S.n}-item test)</th></tr></thead><tbody>
 ${BLOOM.map((x,i)=>`<tr><td>${x[0]}</td><td>${x[1]}</td><td><input type="number" min="0" max="100" value="${S.bw[i]}" aria-label="Weight for ${x[0]}" onchange="setBW(${i},this.value)">%</td><td>${b[i]}</td></tr>`).join("")}</tbody><tfoot><tr><td colspan="2">Total</td><td>${S.bw.reduce((a,v)=>a+(+v||0),0)}%</td><td>${b.reduce((a,v)=>a+v,0)}</td></tr></tfoot></table></div>
@@ -322,14 +328,14 @@ return `<h3>Mastery levels (consolidated)</h3><div class="wrap"><table><thead><t
 <h3 style="margin-top:16px">Mastery by section</h3><div class="wrap"><table><thead><tr><th>Section</th><th>Test takers (rows)</th><th>With scores</th><th>MPS</th><th>Mastery</th></tr></thead><tbody>${sr}</tbody></table></div>
 <h3 style="margin-top:16px">Mastery by item (${N} test takers)</h3><div class="wrap"><table><thead><tr><th>Item</th><th>Topic</th>${S.secs.map(s=>`<th>${esc(s)}</th>`).join("")}<th>Total correct</th><th>Mastery %</th><th>Mastery</th></tr></thead><tbody>${ir}</tbody></table></div><p class="note">Type the number of correct responses per item in each section. Mastery % is the average of the section percentages shown under each box. The Item Difficulty tab updates automatically.</p>`}
 function setRows(v){const t=Math.min(500,Math.max(0,Math.round(+v)||0)),a=S.scores[curSec];while(a.length<t)a.push({name:"",score:""});while(a.length>t)a.pop();draw()}
-function setN(v){const n=Math.min(200,Math.max(1,Math.round(+v)||S.n));S.n=n;Object.values(S.scores).forEach(a=>a.forEach(r=>{if(r.score!==""&&r.score>n)r.score=n}));draw()}
+function setN(v){const n=Math.min(200,Math.max(1,Math.round(+v)||S.n));S.n=n;Object.values(S.scores).forEach(a=>a.forEach(r=>{if(r.score!==""&&r.score>n)r.score=n}));fillMissing(true,-1)}
 async function getDl(){let dl=null;try{dl=window.claude?await window.claude.use("downloads"):null}catch(e){}
 return dl||{save:async({filename,data})=>{const a=document.createElement("a");a.href=URL.createObjectURL(data);a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000)}}}
 function reportBlocks(tab){const B=[],n=S.n,secs=S.secs,tp=topics(),dd=days(),al=alloc(n),bs=bloomSplit(n),N=nTakers(),mp=itemTopic(),cons=rows("Consolidated"),tn=i=>tp[mp[i]]?tp[mp[i]][0]:"-",tt="\u00b7 Term "+S.term;
 const sec=t=>B.push(["sec",t]),sub=t=>B.push(["sub",t]),P=t=>B.push(["p",t]),T=(h,b,w)=>B.push(["tbl",h,b,w]);
 if(tab===0){sec("Budget of Work "+tt);
 T(["Topic","Core value","Days","Competency focus"],[...tp.map(t=>[t[0],t[1],t[2],t[3]]),["Total teaching days","",dd.reduce((a,b)=>a+b,0),""]],[.28,.15,.07,.5])}
-if(tab===1){sec("Table of Specifications "+tt);P(n+"-item test");
+if(tab===1){sec("Table of Specifications "+tt);P(n+"-item test");const ms=missingNums();if(ms.length)P("Missing item numbers: "+compressNums(ms)+" ("+ms.length+" of "+n+").");
 let c=0;const tot=totDays();
 T(["Topic","Days","Share","Items","Item numbers"],tp.map((t,i)=>{const s=c+1;c+=al[i];return[t[0],dd[i],f1(dd[i]/tot*100)+"%",al[i],numsOf(i)||"-"]}),[.46,.1,.12,.1,.22]);
 sub("Cognitive distribution ("+bwGrp("Easy")+"% Easy, "+bwGrp("Average")+"% Average, "+bwGrp("Difficult")+"% Difficult)");
@@ -429,7 +435,115 @@ else{if(typeof PDFLib==="undefined")return msg("The PDF builder isn\u2019t avail
 await(await getDl()).save({filename:fn,data:blob});msg((word?"Word file":"PDF")+" ready: "+fn)}
 catch(e){if(e&&e.code==="declined")return;msg("The file couldn\u2019t be created ("+((e&&(e.message||e.code))||"error")+").")}}
 
-function exportBar(){return S.tab>4?"":`<div class="bar" style="margin-top:18px"><b>Download this tab</b><button class="b p" onclick="dlReport('pdf')">PDF</button><button class="b p" onclick="dlReport('docx')">Word (.docx)</button><span class="note">Includes only the ${TABS[S.tab]} content.</span><span class="note" role="status">${esc(S.pdfMsg||"")}</span></div>`}
+function tosMatrix(){const n=S.n,tp=topics(),m=itemTopic(),lists=tp.map(()=>[]);
+m.forEach((t,k)=>{if(t>=0&&lists[t])lists[t].push(k+1)});
+const ks=lists.map(l=>l.length),sumK=ks.reduce((a,b)=>a+b,0),tgt=bloomSplit(sumK||n);
+let rem=tgt.slice(),remT=sumK;const Q=[],P=[];
+ks.forEach((k,i)=>{let q=[0,0,0,0,0,0];
+if(k>0){const raw=rem.map(r=>remT?k*r/remT:0);q=raw.map(Math.floor);let left=k-q.reduce((a,b)=>a+b,0);
+raw.map((x,j)=>[x-q[j],j]).sort((a,b)=>b[0]-a[0]).forEach(([,j])=>{if(left>0&&q[j]<rem[j]){q[j]++;left--}});
+while(left>0){const j=rem.findIndex((r,j)=>r-q[j]>0);if(j<0)break;q[j]++;left--}}
+rem=rem.map((r,j)=>r-q[j]);remT-=k;Q.push(q);
+let pos=0;P.push(q.map(c=>{const s=lists[i].slice(pos,pos+c);pos+=c;return s}))});
+return{ks,Q,P,sumK}}
+function xlsxStyles(){const ST={fonts:['<font><sz val="11"/><name val="Calibri"/></font>'],fills:['<fill><patternFill patternType="none"/></fill>','<fill><patternFill patternType="gray125"/></fill>'],borders:['<border><left/><right/><top/><bottom/><diagonal/></border>'],xfs:['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'],cache:{}};
+const idx=(arr,x)=>{let i=arr.indexOf(x);if(i<0){arr.push(x);i=arr.length-1}return i};
+const sx=o=>{const k=JSON.stringify(o);if(ST.cache[k]!==undefined)return ST.cache[k];
+const f=idx(ST.fonts,`<font>${o.b?"<b/>":""}${o.i?"<i/>":""}<sz val="${o.sz||11}"/><color rgb="FF${o.c||"000000"}"/><name val="Calibri"/></font>`);
+const fl=o.f?idx(ST.fills,`<fill><patternFill patternType="solid"><fgColor rgb="FF${o.f}"/><bgColor indexed="64"/></patternFill></fill>`):0;
+const e='<color rgb="FF000000"/>',bd=o.bd?idx(ST.borders,`<border><left style="thin">${e}</left><right style="thin">${e}</right><top style="thin">${e}</top><bottom style="thin">${e}</bottom><diagonal/></border>`):0;
+ST.xfs.push(`<xf numFmtId="${o.nf||0}" fontId="${f}" fillId="${fl}" borderId="${bd}" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"${o.nf?' applyNumberFormat="1"':""}><alignment horizontal="${o.h||"general"}" vertical="${o.v||"center"}" wrapText="${o.w?1:0}"/></xf>`);
+return ST.cache[k]=ST.xfs.length-1};
+const xml=()=>`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="${ST.fonts.length}">${ST.fonts.join("")}</fonts><fills count="${ST.fills.length}">${ST.fills.join("")}</fills><borders count="${ST.borders.length}">${ST.borders.join("")}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${ST.xfs.length}">${ST.xfs.join("")}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+return{sx,xml}}
+function xlsxSheet(name){const cells={},merges=[],rowH={};let cols=[];
+const L=c=>String.fromCharCode(64+c);
+const o={name,set(r,c,v,s){cells[r+","+c]={v,s}},
+merge(r1,c1,r2,c2,v,s){merges.push(L(c1)+r1+":"+L(c2)+r2);for(let r=r1;r<=r2;r++)for(let c=c1;c<=c2;c++)cells[r+","+c]={v:(r===r1&&c===c1)?v:null,s}},
+height(r,h){rowH[r]=h},widths(w){cols=w},
+xml(){const rs={};Object.keys(cells).forEach(k=>{const[r,c]=k.split(",").map(Number);(rs[r]=rs[r]||[]).push([c,cells[k]])});
+const rows=Object.keys(rs).map(Number).sort((a,b)=>a-b).map(r=>`<row r="${r}"${rowH[r]?` ht="${rowH[r]}" customHeight="1"`:""}>${rs[r].sort((a,b)=>a[0]-b[0]).map(([c,x])=>{const ref=L(c)+r,s=` s="${x.s||0}"`;
+if(x.v&&typeof x.v==="object"){const fv=x.v.v;return typeof fv==="number"?`<c r="${ref}"${s}><f>${X(x.v.f)}</f><v>${fv}</v></c>`:`<c r="${ref}"${s} t="str"><f>${X(x.v.f)}</f><v>${X(fv==null?"":fv)}</v></c>`}
+if(x.v===null||x.v===undefined||x.v==="")return`<c r="${ref}"${s}/>`;
+if(typeof x.v==="number")return`<c r="${ref}"${s}><v>${x.v}</v></c>`;
+return`<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${X(x.v)}</t></is></c>`}).join("")}</row>`).join("");
+return`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${cols.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join("")}</cols><sheetData>${rows}</sheetData>${merges.length?`<mergeCells count="${merges.length}">${merges.map(m=>`<mergeCell ref="${m}"/>`).join("")}</mergeCells>`:""}<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`}};
+return o}
+const XF=[["title","Test title","TERM EXAMINATION"],["sec","Section(s)",()=>S.secs.join(", ")],["sy","School year","2026-2027"],["school","School name",""],["division","Division",""],["region","Region",""],["prep","Prepared by (name)",""],["prepPos","Prepared by (position)",""],["rev","Checked & Reviewed by (name)",""],["revPos","Checked & Reviewed by (position)",""],["appr","Approved by (name)",""],["apprPos","Approved by (position)",""]];
+function xv(k){if(S.xlsX[k]!=null)return S.xlsX[k];const d=XF.find(x=>x[0]===k)[2];return typeof d==="function"?d():d}
+function setX(k,v){S.xlsX[k]=v;save()}
+async function buildXlsx(){const{ks,Q,P}=tosMatrix(),{sx,xml}=xlsxStyles(),n=S.n,tp=topics(),dd=days(),tot=totDays(),cnt=tp.length;
+const NAVY="1B2A5E",WH="FFFFFF",bw=bwGrp,V=xv,R0=24,TR=R0+cnt,tr1=TR-1;
+const A="E24:E"+tr1;
+const cntF=(rng)=>`SUMPRODUCT((${rng}<>"")*(LEN(${rng})-LEN(SUBSTITUTE(${rng},",",""))+1))`;
+// ---- BOW sheet
+const sb=xlsxSheet("BOW");sb.widths([60,28,12,70]);
+const BT=sx({b:1,sz:14,c:NAVY}),BH=sx({b:1,c:WH,f:NAVY,h:"center",w:1,bd:1}),BC=sx({v:"center",w:1,bd:1}),BV=sx({b:1,c:"C55A11",w:1,bd:1}),BD=sx({h:"center",f:"D9E1F2",bd:1,b:1}),BTOT=sx({b:1,c:WH,f:NAVY,h:"center",bd:1});
+sb.set(1,1,"Budget of Work in Values Education 10",BT);sb.set(2,1,"Term "+S.term,sx({b:1}));sb.set(3,1,"SY "+V("sy"),sx({b:1}));
+["Paksa / Topic","Lilinanging Pagpapahalaga","No. of Days","Competency focus"].forEach((h,i)=>sb.set(4,1+i,h,BH));
+tp.forEach((t,i)=>{const r=5+i;sb.set(r,1,(i+1)+". "+t[0],BC);sb.set(r,2,t[1],BV);sb.set(r,3,dd[i],BD);sb.set(r,4,t[3],BC)});
+sb.set(5+cnt,2,"TOTAL",BTOT);sb.set(5+cnt,3,{f:`SUM(C5:C${4+cnt})`,v:tot},BTOT);
+// ---- TOS sheet
+const s1=xlsxSheet("TOS");s1.widths([52,26,10,14,16,16,14,14,15,15,14,16]);
+const T=sx({b:1,sz:16,c:NAVY,f:"D9E1F2",h:"center"}),T2=sx({b:1,sz:14,c:"C55A11",h:"center"}),LB=sx({b:1,h:"right"}),VL=sx({b:1,c:NAVY,h:"left"}),VO=sx({b:1,c:"C55A11",h:"left"}),CT=sx({h:"center"}),CTB=sx({b:1,h:"center"}),CT14=sx({b:1,sz:14,h:"center"});
+s1.merge(7,1,7,12,"Republic of the Philippines",CT);s1.merge(8,1,8,12,"Department of Education",CT14);s1.merge(9,1,9,12,V("region"),CT);s1.merge(10,1,10,12,V("division"),CT);s1.merge(11,1,11,12,V("school"),sx({b:1,sz:13,h:"center"}));
+s1.merge(13,1,13,12,"TABLE OF SPECIFICATIONS",T);s1.merge(14,1,14,12,V("title"),T2);
+s1.set(16,1,"Learning Area:",LB);s1.merge(16,2,16,7,"VALUES EDUCATION",VL);s1.set(17,1,"Grade Level:",LB);s1.merge(17,2,17,7,"10",VL);s1.set(18,1,"Section:",LB);s1.merge(18,2,18,7,V("sec"),VL);
+s1.merge(16,8,16,9,"Term:",LB);s1.merge(16,10,16,12,String(S.term),VL);s1.merge(17,8,17,9,"School Year:",LB);s1.merge(17,10,17,12,V("sy"),VL);s1.merge(18,8,18,9,"Number of Items:",LB);s1.merge(18,10,18,12,n,VO);
+const H=sx({b:1,c:WH,f:NAVY,h:"center",w:1,bd:1}),HS=sx({b:1,sz:9,c:"C55A11",f:"D9E1F2",h:"center",w:1,bd:1,i:1});
+s1.merge(22,1,23,1,"PAKSA/TOPIC",H);s1.merge(22,2,23,2,"Lilinanging Pagpapahalaga",H);s1.merge(22,3,23,3,"No. of Days",H);s1.merge(22,4,23,4,"Computed Number of Items",H);
+s1.merge(20,5,20,10,"DOMAINS AND PLACEMENT",H);
+const LO=sx({b:1,c:"2F5597",f:"D9EAD3",h:"center",bd:1});
+s1.merge(21,5,21,7,"LOWER ORDER THINKING SKILLS",LO);s1.merge(21,8,21,10,"HIGHER ORDER THINKING SKILLS",LO);
+const GH=(c)=>sx({b:1,sz:9,c:"7F6000",f:c,h:"center",w:1,bd:1});
+s1.merge(22,5,22,6,`EASY (${bw("Easy")}%)\nRemembering & Understanding`,GH("E2F0D9"));
+s1.merge(22,7,22,8,`AVERAGE (${bw("Average")}%)\nApplying & Analyzing`,GH("FFF2CC"));
+s1.merge(22,9,22,10,`DIFFICULT (${bw("Difficult")}%)\nEvaluating & Creating`,GH("FCE4E4"));
+["Remembering\nCognitive","Understanding\nCognitive","Applying\nAffective","Analyzing\nAffective","Evaluating\nAffective to Behavioral","Creating\nBehavioral"].forEach((x,i)=>s1.set(23,5+i,x,HS));
+s1.merge(22,11,22,12,"Total No. of Test Items",H);s1.set(23,11,"Computed Number of Items",H);s1.set(23,12,"Adjusted & Final Number of Items",H);
+s1.height(20,18);s1.height(22,30);s1.height(23,34);
+const TX=sx({v:"center",w:1,bd:1}),VAL=sx({b:1,c:"C55A11",w:1,bd:1}),DAY=sx({h:"center",f:"D9E1F2",bd:1}),CMP=sx({h:"center",f:"FFF2CC",bd:1,nf:2}),CEL=sx({b:1,c:NAVY,h:"center",bd:1,w:1}),GRY=sx({f:"F2F2F2",bd:1}),KC=sx({h:"center",f:"FFF2CC",bd:1}),LC=sx({b:1,sz:12,h:"center",f:"D9E1F2",bd:1});
+const cs=[0,0,0,0,0,0];let sc=0,sk=0,sl=0;
+tp.forEach((t,i)=>{const r=R0+i,comp=dd[i]/tot*n,rr=Math.round(comp);
+s1.set(r,1,{f:`BOW!A${5+i}`,v:(i+1)+". "+t[0]},TX);s1.set(r,2,{f:`BOW!B${5+i}`,v:t[1]},VAL);s1.set(r,3,{f:`BOW!C${5+i}`,v:dd[i]},DAY);
+s1.set(r,4,{f:`(C${r}/C$${TR})*J$18`,v:comp},CMP);
+for(let j=0;j<6;j++){const l=P[i][j];cs[j]+=l.length;l.length?s1.set(r,5+j,l.join(","),CEL):s1.set(r,5+j,null,GRY)}
+s1.set(r,11,{f:`ROUND(D${r},0)`,v:rr},KC);s1.set(r,12,{f:cntF(`E${r}:J${r}`),v:ks[i]},LC);
+s1.height(r,Math.max(36,15*Math.ceil((t[0].length+4)/55)+8));sc+=comp;sk+=rr;sl+=ks[i]});
+const TOT=sx({b:1,sz:12,c:WH,f:NAVY,h:"center",bd:1}),TOTD=sx({b:1,sz:12,c:WH,f:NAVY,h:"center",bd:1,nf:2});
+s1.set(TR,1,null,sx({f:"FBE5D6",bd:1}));s1.set(TR,2,"TOTAL",TOT);s1.set(TR,3,{f:`SUM(C${R0}:C${tr1})`,v:tot},TOT);s1.set(TR,4,{f:`SUM(D${R0}:D${tr1})`,v:sc},TOTD);
+"EFGHIJ".split("").forEach((c,j)=>s1.set(TR,5+j,{f:cntF(`${c}${R0}:${c}${tr1}`),v:cs[j]},TOT));
+s1.set(TR,11,{f:`SUM(K${R0}:K${tr1})`,v:sk},TOT);s1.set(TR,12,{f:`SUM(E${TR}:J${TR})`,v:cs.reduce((a,b)=>a+b,0)},TOT);s1.height(TR,22);
+// required distribution row (from the weights)
+const bs=bloomSplit(n),RQ=sx({b:1,c:"7F6000",f:"FFF2CC",h:"center",bd:1});
+s1.set(TR+1,1,null,sx({}));s1.set(TR+1,2,"Required distribution",sx({b:1,c:"7F6000",h:"right"}));s1.set(TR+1,3,null,sx({}));s1.set(TR+1,4,null,sx({}));
+bs.forEach((v,j)=>s1.set(TR+1,5+j,v,RQ));s1.set(TR+1,11,{f:`SUM(E${TR+1}:J${TR+1})`,v:bs.reduce((a,b)=>a+b,0)},RQ);
+// signatures
+const SG=sx({}),SB=sx({b:1}),SC=sx({b:1,h:"center"}),SP=sx({h:"center"});
+const g=TR+3;s1.set(g,1,"Prepared:",SG);s1.merge(g,3,g,5,"Checked & Reviewed:",SG);s1.merge(g,9,g,11,"Approved:",SG);
+s1.set(g+3,1,V("prep"),SB);s1.merge(g+3,3,g+3,5,V("rev"),SC);s1.merge(g+3,9,g+3,11,V("appr"),SC);
+s1.set(g+4,1,V("prepPos"),SG);s1.merge(g+4,3,g+4,5,V("revPos"),SP);s1.merge(g+4,9,g+4,11,V("apprPos"),SP);
+// ---- Cognitive sheet
+const s2=xlsxSheet("Cognitive Distribution");s2.widths([22,16,12,14,60]);
+s2.merge(1,1,1,5,"COGNITIVE DISTRIBUTION",T);s2.merge(2,1,2,5,`Term ${S.term} \u00b7 ${n}-item test`,T2);
+["Cognitive level","Difficulty","Weight","No. of items","Item numbers"].forEach((h,i)=>s2.set(4,1+i,h,H));
+const LV=["Remembering","Understanding","Applying","Analyzing","Evaluating","Creating"],DF=["Easy","Easy","Average","Average","Difficult","Difficult"],FILL={Easy:"E2F0D9",Average:"FFF2CC",Difficult:"FCE4E4"};
+LV.forEach((l,j)=>{const nums=[].concat(...P.map(p=>p[j])).sort((a,b)=>a-b),f=FILL[DF[j]];
+s2.set(5+j,1,l,sx({f,bd:1,b:1}));s2.set(5+j,2,DF[j],sx({f,bd:1}));s2.set(5+j,3,(+S.bw[j]||0)/100,sx({f,bd:1,h:"center",nf:9}));s2.set(5+j,4,{f:`TOS!${"EFGHIJ"[j]}${TR}`,v:nums.length},sx({f,bd:1,h:"center"}));s2.set(5+j,5,nums.join(", "),sx({f,bd:1,w:1}))});
+s2.set(11,1,"TOTAL",TOT);s2.set(11,2,null,TOT);s2.set(11,3,{f:"SUM(C5:C10)",v:S.bw.reduce((a,v)=>a+(+v||0),0)/100},sx({b:1,c:WH,f:NAVY,h:"center",bd:1,nf:9}));s2.set(11,4,{f:"SUM(D5:D10)",v:cs.reduce((a,b)=>a+b,0)},TOT);s2.set(11,5,null,TOT);
+s2.set(13,1,"Easy",sx({b:1}));s2.set(13,2,{f:"D5+D6",v:cs[0]+cs[1]},sx({h:"left"}));s2.set(14,1,"Average",sx({b:1}));s2.set(14,2,{f:"D7+D8",v:cs[2]+cs[3]},sx({h:"left"}));s2.set(15,1,"Difficult",sx({b:1}));s2.set(15,2,{f:"D9+D10",v:cs[4]+cs[5]},sx({h:"left"}));
+const z=new JSZip(),H0='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',M="http://schemas.openxmlformats.org/spreadsheetml/2006/main",RN="http://schemas.openxmlformats.org/officeDocument/2006/relationships",sh=[s1,sb,s2];
+z.file("[Content_Types].xml",H0+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+sh.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")+'</Types>');
+z.file("_rels/.rels",H0+`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${RN}/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
+z.file("xl/workbook.xml",H0+`<workbook xmlns="${M}" xmlns:r="${RN}"><sheets>${sh.map((s,i)=>`<sheet name="${s.name}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")}</sheets><calcPr fullCalcOnLoad="1"/></workbook>`);
+z.file("xl/_rels/workbook.xml.rels",H0+`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sh.map((s,i)=>`<Relationship Id="rId${i+1}" Type="${RN}/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")}<Relationship Id="rId${sh.length+1}" Type="${RN}/styles" Target="styles.xml"/></Relationships>`);
+z.file("xl/styles.xml",xml());sh.forEach((s,i)=>z.file(`xl/worksheets/sheet${i+1}.xml`,s.xml()));
+return z.generateAsync({type:"blob"})}
+async function dlXlsx(){const msg=m=>{S.pdfMsg=m;draw()};
+if(typeof JSZip==="undefined")return msg("The Excel builder isn\u2019t available. Please reload the page.");
+try{const fn="Table-of-Specifications-Term"+S.term+".xlsx";const blob=await buildXlsx();await(await getDl()).save({filename:fn,data:blob});msg("Excel file ready: "+fn)}
+catch(e){if(e&&e.code==="declined")return;msg("The Excel file couldn\u2019t be created ("+((e&&(e.message||e.code))||"error")+").")}}
+function exportBar(){return S.tab>4?"":`<div class="bar" style="margin-top:18px"><b>Download this tab</b><button class="b p" onclick="dlReport('pdf')">PDF</button><button class="b p" onclick="dlReport('docx')">Word (.docx)</button>${S.tab===1?`<button class="b p" onclick="dlXlsx()">Excel (.xlsx)</button><details class="noprint" style="flex-basis:100%"><summary class="note">Excel sheet details (school, section, signatories)</summary><div class="grid">${XF.map(([k,l])=>`<label class="note">${l}<br><input style="width:100%" aria-label="${l}" value="${esc(xv(k))}" oninput="setX('${k}',this.value)"></label>`).join("")}</div></details>`:""}<span class="note">Includes only the ${TABS[S.tab]} content.</span><span class="note" role="status">${esc(S.pdfMsg||"")}</span></div>`}
 function exp(kind){const ts=topicStats(),a=alloc(S.n);
 const data={term:S.term,items:S.n,bow:topics().map((t,i)=>({topic:t[0],value:t[1],days:days()[i],tosItems:a[i]})),
 sections:Object.fromEntries(S.secs.map(s=>{const st=stats(S.scores[s]||[]);return[s,{takers:st.n,mps:+f1(st.mps),mastery:mastery(st.mps)[0]}]})),
