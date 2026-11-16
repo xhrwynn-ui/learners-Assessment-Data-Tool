@@ -172,6 +172,7 @@ return{n,tot,mps:n?tot/(n*S.n)*100:0}}
 
 function setTab(i){S.tab=i;draw()}
 function draw(){
+if(S.pdfMsg&&!S.keepMsg)S.pdfMsg="";S.keepMsg=false;
 if(S.report){$("#nav").innerHTML="";$("#app").innerHTML=reportHTML();return}
 $("#nav").innerHTML=TABS.map((t,i)=>`<button role="tab" aria-selected="${i===S.tab}" onclick="setTab(${i})">${t}</button>`).join("");
 $("#app").innerHTML=[bow,tos,score,difficulty,remed,licTab][S.tab]()+`<div class="noprint">${exportBar()}${S.out?`<textarea readonly aria-label="Export output" onfocus="this.select()">${esc(S.out)}</textarea>`:""}</div>`;
@@ -495,7 +496,7 @@ const fr=t=>`<w:r><w:rPr><w:sz w:val="14"/></w:rPr>${t}</w:r>`;
 z.file("word/footer1.xml",H+`<w:ftr xmlns:w="${NS}"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr>${WR(CREDIT,{z:14})}</w:p><w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="right"/></w:pPr>${fr('<w:t xml:space="preserve">Page </w:t>')}${fr('<w:fldChar w:fldCharType="begin"/>')}${fr('<w:instrText xml:space="preserve"> PAGE </w:instrText>')}${fr('<w:fldChar w:fldCharType="separate"/>')}${fr("<w:t>1</w:t>")}${fr('<w:fldChar w:fldCharType="end"/>')}</w:p></w:ftr>`);
 z.file("word/document.xml",H+`<w:document xmlns:w="${NS}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${WP(WR(rptHead(),{z:18,c:"666666"}),{sa:120})}${wBody(B)}<w:sectPr><w:footerReference w:type="default" r:id="rId1"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1260" w:right="1440" w:bottom="1260" w:left="1440" w:header="720" w:footer="500" w:gutter="0"/></w:sectPr></w:body></w:document>`);
 return z.generateAsync({type:"blob"})}
-async function dlReport(fmt){const msg=m=>{S.pdfMsg=m;draw()},tab=S.tab;if(tab>4)return msg("There is nothing to download on this tab.");
+async function dlReport(fmt){const msg=m=>{S.pdfMsg=m;S.keepMsg=true;draw()},tab=S.tab;if(tab>4)return msg("There is nothing to download on this tab.");
 const NM=["Budget-of-Work","Table-of-Specifications","Score-Entry","Item-Difficulty","Remediation-and-SIM"],word=fmt==="docx",fn=NM[tab]+"-Term"+S.term+(word?".docx":".pdf");
 try{const B=reportBlocks(tab);let blob;
 if(word){if(typeof JSZip==="undefined")return msg("The Word builder didn\u2019t load. Check your connection and reload the page.");blob=await buildDocx(B)}
@@ -607,7 +608,7 @@ z.file("xl/workbook.xml",H0+`<workbook xmlns="${M}" xmlns:r="${RN}"><sheets>${sh
 z.file("xl/_rels/workbook.xml.rels",H0+`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sh.map((s,i)=>`<Relationship Id="rId${i+1}" Type="${RN}/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")}<Relationship Id="rId${sh.length+1}" Type="${RN}/styles" Target="styles.xml"/></Relationships>`);
 z.file("xl/styles.xml",xml());sh.forEach((s,i)=>z.file(`xl/worksheets/sheet${i+1}.xml`,s.xml()));
 return z.generateAsync({type:"blob"})}
-async function dlXlsx(){const msg=m=>{S.pdfMsg=m;draw()};
+async function dlXlsx(){const msg=m=>{S.pdfMsg=m;S.keepMsg=true;draw()};
 if(typeof JSZip==="undefined")return msg("The Excel builder isn\u2019t available. Please reload the page.");
 try{const fn="Table-of-Specifications-Term"+S.term+".xlsx";const blob=await buildXlsx();await(await getDl()).save({filename:fn,data:blob});msg("Excel file ready: "+fn)}
 catch(e){if(e&&e.code==="declined")return;msg("The Excel file couldn\u2019t be created ("+((e&&(e.message||e.code))||"error")+").")}}
